@@ -1,0 +1,95 @@
+import tensorflow as tf
+from tensorflow.keras import layers, models
+from tensorflow.keras.preprocessing.image import ImageDataGenerator
+import os
+
+# ==============================================================================
+# CONFIGURATION PROFILE - DIRECT PATH ROUTING
+# Points directly to your unzipped archive dataset repository path
+# ==============================================================================
+DATASET_PATH = r"C:\Users\JAYANTHI\OneDrive\Desktop\currency_dataset\archive"
+BATCH_SIZE = 32
+IMG_SIZE = (224, 224) 
+EPOCHS = 10
+
+print(f"\n[Step 1/5] Auditing Dataset Directory Structure at: {DATASET_PATH}")
+
+if not os.path.exists(DATASET_PATH):
+    raise FileNotFoundError(f"The path '{DATASET_PATH}' does not exist. Please check your folder structure.")
+
+# --- 1. Dynamic Split Generator ---
+# Automatically reserves 20% of your archive images dynamically for testing/validation
+datagen = ImageDataGenerator(
+    rescale=1.0/255,
+    rotation_range=30,
+    width_shift_range=0.15,
+    height_shift_range=0.15,
+    horizontal_flip=True,
+    vertical_flip=True, 
+    validation_split=0.2 
+)
+
+print("\n[Step 2/5] Building Real-Time Image Stream Pipelines...")
+train_generator = datagen.flow_from_directory(
+    DATASET_PATH,
+    target_size=IMG_SIZE,
+    batch_size=BATCH_SIZE,
+    class_mode='categorical',
+    subset='training' 
+)
+
+val_generator = datagen.flow_from_directory(
+    DATASET_PATH,
+    target_size=IMG_SIZE,
+    batch_size=BATCH_SIZE,
+    class_mode='categorical',
+    subset='validation' 
+)
+
+num_classes = train_generator.num_classes
+class_indices = train_generator.class_indices
+
+print("\n" + "="*50)
+print(f"  SUCCESSFULLY DETECTED CLASSES: {list(class_indices.keys())}")
+print(f"  TOTAL NODE CATEGORIES IDENTIFIED: {num_classes}")
+print("="*50 + "\n")
+
+# --- 2. Construct Deep Learning Architecture Head ---
+print("[Step 3/5] Loading Pre-trained MobileNetV2 Core Filter Layers...")
+base_model = tf.keras.applications.MobileNetV2(input_shape=(224, 224, 3), include_top=False, weights='imagenet')
+base_model.trainable = False 
+
+model = models.Sequential([
+    base_model,
+    layers.GlobalAveragePooling2D(),
+    layers.Dropout(0.35), 
+    layers.Dense(128, activation='relu'),
+    layers.Dense(num_classes, activation='softmax') 
+])
+
+model.compile(optimizer='adam', loss='categorical_crossentropy', metrics=['accuracy'])
+
+# --- 3. Execute Model Fine-Tuning Loop ---
+print("\n[Step 4/5] Executing Deep Training Feature Extraction Passes...")
+model.fit(train_generator, epochs=EPOCHS, validation_data=val_generator)
+
+# --- 4. Quantization & Serialization (Convert to Standalone Offline TFLite) ---
+print("\n[Step 5/5] Compressing and Exporting Architecture into Standalone Offline TFLite Payload...")
+converter = tf.lite.TFLiteConverter.from_keras_model(model)
+converter.optimizations = [tf.lite.Optimize.DEFAULT] 
+tflite_model = converter.convert()
+
+# Write binary model parameters asset down into folder workspace
+with open("currency_model.tflite", "wb") as f:
+    f.write(tflite_model)
+
+# Write custom index labels mapper file
+with open("labels.txt", "w") as f:
+    for label, index in sorted(class_indices.items(), key=lambda item: item[1]):
+        f.write(f"{label}\n")
+
+print("\n" + "="*60)
+print("  TRAINING PIPELINE COMPLETE! EXPORTED TARGET ASSETS:")
+print("  - currency_model.tflite (Quantized Offline Model Matrix)")
+print("  - labels.txt (Class Reference Mappings List)")
+print("="*60 + "\n")
